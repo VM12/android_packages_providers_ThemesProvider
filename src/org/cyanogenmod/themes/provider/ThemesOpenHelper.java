@@ -36,7 +36,7 @@ import android.util.Log;
 public class ThemesOpenHelper extends SQLiteOpenHelper {
     private static final String TAG = ThemesOpenHelper.class.getName();
 
-    private static final int DATABASE_VERSION = 17;
+    private static final int DATABASE_VERSION = 14;
     private static final String DATABASE_NAME = "themes.db";
     private static final String SYSTEM_THEME_PKG_NAME = ThemeConfig.SYSTEM_DEFAULT;
     private static final String OLD_SYSTEM_THEME_PKG_NAME = "holo";
@@ -114,15 +114,6 @@ public class ThemesOpenHelper extends SQLiteOpenHelper {
             if (oldVersion == 13) {
                 upgradeToVersion14(db);
                 oldVersion = 14;
-            }
-            if (oldVersion == 14 || oldVersion == 15) {
-                // Versions 15 and 16 share same upgrade path, no need to run twice.
-                upgradeToVersion16(db);
-                oldVersion = 16;
-            }
-            if (oldVersion == 16) {
-                upgradeToVersion17(db);
-                oldVersion = 17;
             }
             if (oldVersion != DATABASE_VERSION) {
                 Log.e(TAG, "Recreating db because unknown database version: " + oldVersion);
@@ -412,34 +403,6 @@ public class ThemesOpenHelper extends SQLiteOpenHelper {
         db.execSQL(sql);
     }
 
-    // upgradeToVersion16 is the same upgrade path for both 14->15 and 15->16
-    private void upgradeToVersion16(SQLiteDatabase db) {
-        // Previews table upgraded
-        db.execSQL("DROP TABLE IF EXISTS " + PreviewsTable.TABLE_NAME);
-        db.execSQL(PreviewsTable.PREVIEWS_TABLE_CREATE);
-
-        // we need to update any existing themes
-        final String[] projection = { ThemesColumns.PKG_NAME };
-        final Cursor c = db.query(ThemesTable.TABLE_NAME, projection, null, null,
-                null, null, null);
-        if (c != null) {
-            while(c.moveToNext()) {
-                Intent intent = new Intent(mContext, PreviewGenerationService.class);
-                intent.setAction(PreviewGenerationService.ACTION_INSERT);
-                intent.putExtra(PreviewGenerationService.EXTRA_PKG_NAME, c.getString(0));
-                mContext.startService(intent);
-            }
-            c.close();
-        }
-    }
-
-    private void upgradeToVersion17(SQLiteDatabase db) {
-        // add componentId column to mixnmatch db
-        String sql = String.format("ALTER TABLE %s ADD COLUMN %s INTEGER DEFAULT 0",
-        MixnMatchTable.TABLE_NAME, MixnMatchColumns.COL_COMPONENT_ID);
-        db.execSQL(sql);
-    }
-
     private void dropTables(SQLiteDatabase db) {
         db.execSQL("DROP TABLE IF EXISTS " + ThemesTable.TABLE_NAME);
         db.execSQL("DROP TABLE IF EXISTS " + MixnMatchTable.TABLE_NAME);
@@ -524,8 +487,7 @@ public class ThemesOpenHelper extends SQLiteOpenHelper {
                         MixnMatchColumns.COL_KEY + " TEXT PRIMARY KEY," +
                         MixnMatchColumns.COL_VALUE + " TEXT," +
                         MixnMatchColumns.COL_PREV_VALUE + " TEXT," +
-                        MixnMatchColumns.COL_UPDATE_TIME + " INTEGER DEFAULT 0," +
-                        MixnMatchColumns.COL_COMPONENT_ID + " INTEGER DEFAULT 0" +
+                        MixnMatchColumns.COL_UPDATE_TIME + " INTEGER DEFAULT 0" +
                         ")";
 
         public static void insertDefaults(SQLiteDatabase db) {
@@ -546,14 +508,35 @@ public class ThemesOpenHelper extends SQLiteOpenHelper {
                 "CREATE TABLE " + TABLE_NAME + " (" +
                         PreviewColumns._ID + " INTEGER PRIMARY KEY AUTOINCREMENT, " +
                         PreviewColumns.THEME_ID + " INTEGER, " +
-                        PreviewColumns.COMPONENT_ID + " INTEGER DEFAULT 0, " +
-                        PreviewColumns.COL_KEY + " TEXT," +
-                        PreviewColumns.COL_VALUE + " TEXT, " +
+                        PreviewColumns.STATUSBAR_BACKGROUND + " BLOB, " +
+                        PreviewColumns.STATUSBAR_BLUETOOTH_ICON + " BLOB, " +
+                        PreviewColumns.STATUSBAR_WIFI_ICON + " BLOB, " +
+                        PreviewColumns.STATUSBAR_SIGNAL_ICON + " BLOB, " +
+                        PreviewColumns.STATUSBAR_BATTERY_PORTRAIT + " BLOB, " +
+                        PreviewColumns.STATUSBAR_BATTERY_LANDSCAPE + " BLOB, " +
+                        PreviewColumns.STATUSBAR_BATTERY_CIRCLE + " BLOB, " +
+                        PreviewColumns.STATUSBAR_CLOCK_TEXT_COLOR + " INTEGER, " +
+                        PreviewColumns.STATUSBAR_WIFI_COMBO_MARGIN_END + " INTEGER, " +
+                        PreviewColumns.NAVBAR_BACKGROUND + " BLOB, " +
+                        PreviewColumns.NAVBAR_BACK_BUTTON + " BLOB, " +
+                        PreviewColumns.NAVBAR_HOME_BUTTON + " BLOB, " +
+                        PreviewColumns.NAVBAR_RECENT_BUTTON + " BLOB, " +
+                        PreviewColumns.ICON_PREVIEW_1 + " BLOB, " +
+                        PreviewColumns.ICON_PREVIEW_2 + " BLOB, " +
+                        PreviewColumns.ICON_PREVIEW_3 + " BLOB, " +
+                        PreviewColumns.ICON_PREVIEW_4 + " BLOB, " +
+                        PreviewColumns.STYLE_PREVIEW + " BLOB, " +
+                        PreviewColumns.STYLE_THUMBNAIL + " BLOB, " +
+                        PreviewColumns.WALLPAPER_PREVIEW + " BLOB, " +
+                        PreviewColumns.WALLPAPER_THUMBNAIL + " BLOB, " +
+                        PreviewColumns.LOCK_WALLPAPER_PREVIEW + " BLOB, " +
+                        PreviewColumns.LOCK_WALLPAPER_THUMBNAIL + " BLOB, " +
+                        PreviewColumns.BOOTANIMATION_THUMBNAIL + " BLOB, " +
                         "FOREIGN KEY (" + PreviewColumns.THEME_ID + ") REFERENCES " +
                         ThemesTable.TABLE_NAME + "(" + ThemesColumns._ID + ")" +
                         ")";
 
-        public static final String[] STATUS_BAR_PREVIEW_KEYS = {
+        public static final String[] STATUS_BAR_PREVIEW_COLUMNS = {
                 PreviewColumns.STATUSBAR_BACKGROUND,
                 PreviewColumns.STATUSBAR_BLUETOOTH_ICON,
                 PreviewColumns.STATUSBAR_WIFI_ICON,
@@ -564,16 +547,17 @@ public class ThemesOpenHelper extends SQLiteOpenHelper {
                 PreviewColumns.STATUSBAR_WIFI_COMBO_MARGIN_END,
                 PreviewColumns.STATUSBAR_CLOCK_TEXT_COLOR
         };
-        public static final String[] NAVIGATION_BAR_PREVIEW_KEYS = {
+        public static final String[] NAVIGATION_BAR_PREVIEW_COLUMNS = {
                 PreviewColumns.NAVBAR_BACK_BUTTON,
                 PreviewColumns.NAVBAR_HOME_BUTTON,
                 PreviewColumns.NAVBAR_RECENT_BUTTON,
                 PreviewColumns.NAVBAR_BACKGROUND
         };
-        public static final String[] ICON_PREVIEW_KEYS = {
+        public static final String[] ICON_PREVIEW_COLUMNS = {
                 PreviewColumns.ICON_PREVIEW_1,
                 PreviewColumns.ICON_PREVIEW_2,
-                PreviewColumns.ICON_PREVIEW_3
+                PreviewColumns.ICON_PREVIEW_3,
+                PreviewColumns.ICON_PREVIEW_4
         };
 
         public static void insertDefaults(Context context) {
